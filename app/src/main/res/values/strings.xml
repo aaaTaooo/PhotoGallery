@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">PhotoGallery</string>
+    <string name="refresh">Refresh</string>
+    <string name="are_you_sure">Are you sure?</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+</resources>
