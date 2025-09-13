@@ -28,15 +28,15 @@ class MainActivity : ComponentActivity() {
 
         val requestPermission = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
-        ) { isGranted ->
+        ) { granted ->
             setContent {
                 PhotoGalleryTheme {
-                    if (isGranted) {
+                    if (granted) {
                         val photoGalleryViewModel = remember { PhotoGalleryViewModel() }
                         LaunchedEffect(Unit) {
                             photoGalleryViewModel.loadPhotos(this@MainActivity)
                         }
-                        PhotoGallery(viewModel = photoGalleryViewModel)
+                        PhotoGallery(viewModel = photoGalleryViewModel, activity = this@MainActivity )
                     } else {
                         Text("Require permission to view Photos")
                     }
@@ -44,9 +44,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (ContextCompat.checkSelfPermission(this, permission)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
             requestPermission.launch(permission)
         } else {
             requestPermission.launch(permission)
