@@ -1,10 +1,13 @@
 package com.example.photogallery.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -32,10 +35,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.example.photogallery.MAXCOLS
 import com.example.photogallery.MINCOLS
 import com.example.photogallery.PhotoGalleryViewModel
@@ -106,9 +111,22 @@ fun PhotoGallery(modifier: Modifier = Modifier, viewModel: PhotoGalleryViewModel
                         zoom = 1f
                     }
                 }) {
-            LazyVerticalGrid( columns = GridCells.Fixed(uiState.columns)) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(uiState.columns)
+            ) {
                 items(uiState.photos.size) { index ->
-                    //Under develop
+                    val photo = uiState.photos[index]
+                    val bmap = uiState.thumbnails[photo.id]
+                    if(bmap!=null) {
+                        Image(
+                            bitmap = bmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .fillMaxWidth()
+                                .height(150.dp)
+                        )
+                    }
                 }
             }
         }

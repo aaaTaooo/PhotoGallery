@@ -7,5 +7,5 @@ data class PhotoGalleryUiState(
     val thumbnails: Map<String, Bitmap> = emptyMap(),
     val isLoading: Boolean = true,
     val hasPermission: Boolean = false,
-    val columns: Int = 3
+    val columns: Int = 2
 )
