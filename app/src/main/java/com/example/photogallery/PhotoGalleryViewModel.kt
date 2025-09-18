@@ -1,6 +1,5 @@
 package com.example.photogallery
 
-import android.R.attr.orientation
 import android.content.ContentUris
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -17,14 +16,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.graphics.BitmapFactory.Options
+import android.graphics.Matrix
+import androidx.core.graphics.scale
 
 const val MINCOLS=1
 const val MAXCOLS=3
 class PhotoGalleryViewModel : ViewModel() {
+    //private mutable Ui state for updating info
     private val _uiState = MutableStateFlow(PhotoGalleryUiState())
+    //public immutable Ui state
     val uiState: StateFlow<PhotoGalleryUiState> = _uiState.asStateFlow()
 
-    //Caching Bitmap
+    //LRU cache for storing Bitmap
     private val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
     private val cacheSize = maxMemory / 8
     private val memoryCache = object : LruCache<String, Bitmap>(cacheSize) {
@@ -33,20 +36,26 @@ class PhotoGalleryViewModel : ViewModel() {
         }
     }
     fun getBitmap(key: String): Bitmap? {
-        return memoryCache.get(key)
+        return memoryCache[key]
     }
+
+    //avoid bitmap stored with repeat key
     fun putBitmap(key: String, bitmap: Bitmap) {
         if (getBitmap(key) == null) memoryCache.put(key, bitmap)
     }
 
+    // Update the number of grid columns in Ui state
     fun updateColumns(newCols: Int) {
         _uiState.update { currentState -> currentState.copy(columns = newCols) }
     }
 
+    // Reload photo list from MediaStore
     fun refreshPhotos(activity: MainActivity) {
+        _uiState.update { currentState -> currentState.copy(photos = emptyList(), isLoading = true) }
         loadPhotos(activity)
     }
 
+    //Load photo data from MediaStore and update mutable Ui state with photo list
     fun loadPhotos(activity: MainActivity) {
         _uiState.update { currentState -> currentState.copy(isLoading = true) }
 
@@ -60,7 +69,6 @@ class PhotoGalleryViewModel : ViewModel() {
             )
 
             val photos = mutableListOf<Photo>()
-            //val thumbnails = mutableMapOf<String, Bitmap>()
             val cursor = activity.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 projection, null, null,
@@ -87,12 +95,14 @@ class PhotoGalleryViewModel : ViewModel() {
         }
     }
 
+    //Load bitmap thumbnail for the given photo from MediaStore
     suspend fun loadThumbnail(
         activity: MainActivity,
         photo: Photo,
-        reqWidth: Int,
-        reqHeight: Int
+        requestedWidth: Int,
+        requestedHeight: Int
     ): Bitmap? {
+        //check the bitmap key first
         val key = photo.id
         getBitmap(key)?.let { return it }
 
@@ -102,51 +112,70 @@ class PhotoGalleryViewModel : ViewModel() {
         )
 
         val bitmap = withContext(Dispatchers.IO) {
-            decodeSampledBitmapFromUri(activity, uri, reqWidth, reqHeight, photo.orientation)
+            decodeSampledBitmapFromUri(activity, uri, requestedWidth, requestedHeight, photo.orientation)
         }
 
         bitmap?.let { putBitmap(key, it) }
         return bitmap
     }
 
+    //decode bitmap and cut the size to fit thumbnail size
     private fun decodeSampledBitmapFromUri(
         activity: MainActivity,
         uri: Uri,
-        reqWidth: Int,
-        reqHeight: Int,
+        requestedWidth: Int,
+        requestedHeight: Int,
         orientation: Int
     ): Bitmap? {
         val options = Options().apply { inJustDecodeBounds = true }
         activity.contentResolver.openInputStream(uri)
             ?.use { BitmapFactory.decodeStream(it, null, options) }
-        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+        options.inSampleSize = calculateInSampleSize(options, requestedWidth, requestedHeight)
         options.inJustDecodeBounds = false
         val bitmap = activity.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, options)
+        } ?: return null
+
+        //keep the original ratio of the images in the thumbnails
+        val oriented = rotateBitmap(bitmap, orientation)
+        val sourceRatio = oriented.width.toFloat() / oriented.height.toFloat()
+        val scaled: Bitmap
+        if (sourceRatio > 1.25) {
+            //if the image is wider than the thumbnail size
+            val newHeight = requestedHeight
+            val newWidth = (newHeight * sourceRatio).toInt()
+            scaled = oriented.scale(newWidth, newHeight)
+        } else {
+            //if the image is higher than the thumbnail size
+            val newWidth = requestedWidth
+            val newHeight = (newWidth / sourceRatio).toInt()
+            scaled = oriented.scale(newWidth, newHeight)
         }
-        return bitmap?.let { rotated ->
-            val oriented = rotateBitmap(rotated, orientation)
-            Bitmap.createScaledBitmap(oriented, reqWidth, reqHeight, true)
-        }
+        val x = (scaled.width - requestedWidth) / 2
+        val y = (scaled.height - requestedHeight) / 2
+        return Bitmap.createBitmap(scaled, x, y, requestedWidth , requestedHeight)
     }
 
-    private fun calculateInSampleSize(options: Options, reqWidth: Int, reqHeight: Int): Int {
+    //Calculate the sample size to downsize large images
+    private fun calculateInSampleSize(options: Options, requestedWidth: Int, requestedHeight: Int): Int {
         val (height, width) = options.outHeight to options.outWidth
         var inSampleSize = 1
 
-        if (height > reqHeight || width > reqWidth) {
+        if (height > requestedHeight || width > requestedWidth) {
             val halfHeight: Int = height / 2
             val halfWidth: Int = width / 2
 
-            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+            while (halfHeight / inSampleSize >= requestedHeight && halfWidth / inSampleSize >= requestedWidth) {
                 inSampleSize *= 2
             }
         }
         return inSampleSize
     }
+
+    //adjust the orientation of displaying images in thumbnails
     private fun rotateBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
         if (orientation == 0) return bitmap
-        val matrix = android.graphics.Matrix().apply { postRotate(orientation.toFloat()) }
+        val matrix = Matrix().apply { postRotate(orientation.toFloat()) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 }

@@ -6,15 +6,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.example.photogallery.ui.PhotoViewer
 import com.example.photogallery.ui.theme.PhotoGalleryTheme
+import androidx.core.net.toUri
 
 class PhotoViewerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val photoId = intent.getStringExtra("photo_id") ?: ""
+        val photoUriString = intent .getStringExtra("photo_uri") ?: ""
+        val photoUri = photoUriString.toUri()
+        val photoOrientation = intent.getIntExtra("photo_orientation", 0)
         enableEdgeToEdge()
         setContent {
             PhotoGalleryTheme {
-                PhotoViewer(photoId = photoId)
+                PhotoViewer(activity = this, photoUri = photoUri, orientation = photoOrientation)
             }
         }
     }

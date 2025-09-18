@@ -1,8 +1,14 @@
 package com.example.photogallery.ui
 
+import android.content.ContentUris
+import android.content.Intent
 import android.graphics.Bitmap
+import android.provider.MediaStore
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -11,8 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -30,36 +34,31 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.photogallery.MAXCOLS
 import com.example.photogallery.MINCOLS
 import com.example.photogallery.MainActivity
 import com.example.photogallery.PhotoGalleryViewModel
+import com.example.photogallery.PhotoViewerActivity
 import com.example.photogallery.R
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 //Lazy Vertical Grid Photo Gallery with Gesture implementation
 @Composable
 fun PhotoGallery(viewModel: PhotoGalleryViewModel, activity: MainActivity) {
     val uiState by viewModel.uiState.collectAsState()
-    //val context = LocalContext.current
     var zoom by remember { mutableFloatStateOf(1f) }
 
     Scaffold(
@@ -71,6 +70,7 @@ fun PhotoGallery(viewModel: PhotoGalleryViewModel, activity: MainActivity) {
                 .padding(innerPadding)
                 .graphicsLayer { scaleX = zoom; scaleY = zoom }
                 .pointerInput(Unit) {
+                    //Gesture for zoom in and zoom out feature for displaying different columns
                     awaitEachGesture {
                         awaitFirstDown(pass = PointerEventPass.Initial)
                         do {
@@ -78,11 +78,13 @@ fun PhotoGallery(viewModel: PhotoGalleryViewModel, activity: MainActivity) {
                             val zoomChange = event.calculateZoom()
                             if (zoomChange != 1f) {
                                 zoom *= zoomChange
-                                if (zoom != 0f) {
-                                    val cols =
-                                        min(max((uiState.columns / zoom).roundToInt(), MINCOLS), MAXCOLS)
-                                    if (cols != uiState.columns) {
-                                        viewModel.updateColumns(cols)
+                                when {
+                                    zoom > 1.5f && uiState.columns < MAXCOLS -> {
+                                        viewModel.updateColumns(uiState.columns + 1)
+                                        zoom = 1f
+                                    }
+                                    zoom < 0.5f && uiState.columns > MINCOLS -> {
+                                        viewModel.updateColumns(uiState.columns - 1)
                                         zoom = 1f
                                     }
                                 }
@@ -93,6 +95,7 @@ fun PhotoGallery(viewModel: PhotoGalleryViewModel, activity: MainActivity) {
                     }
                 }
         ) {
+            //LazyVerticalGrid of thumbnails with a LaunchedEffect to load photos
             LazyVerticalGrid(
                 columns = GridCells.Fixed(uiState.columns),
                 contentPadding = PaddingValues(4.dp),
@@ -102,30 +105,48 @@ fun PhotoGallery(viewModel: PhotoGalleryViewModel, activity: MainActivity) {
                 items(uiState.photos.size) { index ->
                     val photo = uiState.photos[index]
                     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+                    var scale by remember { mutableFloatStateOf(0f) }
 
+                    //using a coroutine with the IO dispatcher to load thumbnails
                     LaunchedEffect(photo.id) {
-                        bitmap = viewModel.loadThumbnail(activity, photo, 200, 200)
+                        bitmap = viewModel.loadThumbnail(activity, photo, 200, 160)
+                        scale = 1f
                     }
+                    //float animation
+                    val animatedScale by animateFloatAsState(
+                        targetValue = scale,
+                        animationSpec = tween(durationMillis = 300)
+                    )
 
                     bitmap?.let {
                         Image(
                             bitmap = it.asImageBitmap(),
                             contentDescription = null,
                             modifier = Modifier
-                                .aspectRatio(1f)
+                                .aspectRatio(1.25f)
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-//                                .padding(4.dp)
-//                                .fillMaxWidth()
-//                                .height(150.dp)
+                                //load thumbnails animation
+                                .graphicsLayer{
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                }
+                                .clickable{
+                                    val uri = ContentUris.withAppendedId(
+                                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                        photo.id.toLong()
+                                    )
+                                    val intent = Intent(activity, PhotoViewerActivity::class.java).apply {
+                                        putExtra("photo_uri",uri.toString())
+                                        putExtra("photo_orientation", photo.orientation)
+                                    }
+                                    activity.startActivity(intent)
+                                },
+                            contentScale = ContentScale.Crop
                         )
                     } ?: Box(
                         Modifier
-                            .aspectRatio(1f)
+                            .aspectRatio(1.25f)  //thumbnails ratio
                             .background(MaterialTheme.colorScheme.surfaceVariant)
-//                            .padding(4.dp)
-//                            .fillMaxWidth()
-//                            .height(150.dp)
-//                            .background(MaterialTheme.colorScheme.surfaceVariant)
                     )
                 }
             }
